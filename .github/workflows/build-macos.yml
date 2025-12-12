@@ -40,7 +40,7 @@ jobs:
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
             -DCMAKE_PREFIX_PATH="/opt/homebrew/opt/openal-soft" \
             -DENABLE_QT=ON \
-            -DCITRON_ENABLE_LTO=ON \
+            -DCITRON_ENABLE_LTO=OFF \
             -DCITRON_TESTS=OFF \
             -DUSE_DISCORD_PRESENCE=ON \
             -DENABLE_WEB_SERVICE=ON \
