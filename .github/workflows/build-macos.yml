@@ -60,6 +60,15 @@ jobs:
             -DENABLE_SDL2=ON \
             -DCITRON_USE_EXTERNAL_SDL2=OFF
 
+      - name: Patch Qt for Xcode 26 (AGL removal)
+        run: |
+          QT_OPENGL_CMAKE="build/externals/qt/6.7.3/macos/lib/cmake/Qt6/FindWrapOpenGL.cmake"
+          if [ -f "$QT_OPENGL_CMAKE" ]; then
+            # AGL framework was removed in Xcode 26 - patch Qt to not require it
+            sed -i '' 's/set(__opengl_agl_fw_path.*/set(__opengl_agl_fw_path "")/' "$QT_OPENGL_CMAKE" || true
+            echo "Patched Qt FindWrapOpenGL.cmake for Xcode 26 compatibility"
+          fi
+
       - name: Build Citron
         run: cmake --build build --config Release
 
@@ -85,29 +94,52 @@ jobs:
 
           FRAMEWORKS_PATH="$APP_BUNDLE_PATH/Contents/Frameworks"
 
-          # Copy missing transitive dependencies (like libsharpyuv from webp)
+          # Create Vulkan ICD json to ensure bundled MoltenVK is used (not homebrew's)
+          echo "Setting up Vulkan ICD for bundled MoltenVK..."
+          VULKAN_ICD_DIR="$APP_BUNDLE_PATH/Contents/Resources/vulkan/icd.d"
+          mkdir -p "$VULKAN_ICD_DIR"
+          cat > "$VULKAN_ICD_DIR/MoltenVK_icd.json" << 'ICDEOF'
+          {
+              "file_format_version": "1.0.0",
+              "ICD": {
+                  "library_path": "../../../Frameworks/libMoltenVK.dylib",
+                  "api_version": "1.4.0",
+                  "is_portability_driver": true
+              }
+          }
+          ICDEOF
+          echo "Created MoltenVK ICD at $VULKAN_ICD_DIR/MoltenVK_icd.json"
+
+          # Copy missing transitive dependencies (like libsharpyuv from webp, liblcms2 from jxl)
           echo "Checking for missing transitive dependencies..."
           copy_missing_deps() {
-            local changed=0
             find "$FRAMEWORKS_PATH" -name "*.dylib" -type f | while read -r dylib; do
+              # Handle @rpath/ references
               otool -L "$dylib" 2>/dev/null | grep -E "^\s+@rpath/" | awk '{print $1}' | sed 's|@rpath/||' | while read -r dep; do
                 if [ ! -f "$FRAMEWORKS_PATH/$dep" ]; then
-                  # Try to find in homebrew
-                  HOMEBREW_LIB=$(find /opt/homebrew/lib /usr/local/lib -name "$dep" 2>/dev/null | head -1)
+                  HOMEBREW_LIB=$(find /opt/homebrew/lib /opt/homebrew/Cellar /usr/local/lib -name "$dep" 2>/dev/null | head -1)
                   if [ -n "$HOMEBREW_LIB" ] && [ -f "$HOMEBREW_LIB" ]; then
-                    echo "Copying missing dependency: $dep"
+                    echo "Copying missing @rpath dependency: $dep"
                     cp "$HOMEBREW_LIB" "$FRAMEWORKS_PATH/"
                     chmod u+w "$FRAMEWORKS_PATH/$dep"
                     install_name_tool -id "@rpath/$dep" "$FRAMEWORKS_PATH/$dep" 2>/dev/null || true
-                    changed=1
                   fi
                 fi
               done
+              # Handle absolute homebrew path references (critical for portability!)
+              otool -L "$dylib" 2>/dev/null | grep -E "^\s+(/opt/homebrew|/usr/local)" | awk '{print $1}' | while read -r abs_dep; do
+                dep_name=$(basename "$abs_dep")
+                if [ ! -f "$FRAMEWORKS_PATH/$dep_name" ] && [ -f "$abs_dep" ]; then
+                  echo "Copying missing absolute-path dependency: $dep_name (from $abs_dep)"
+                  cp "$abs_dep" "$FRAMEWORKS_PATH/"
+                  chmod u+w "$FRAMEWORKS_PATH/$dep_name"
+                  install_name_tool -id "@rpath/$dep_name" "$FRAMEWORKS_PATH/$dep_name" 2>/dev/null || true
+                fi
+              done
             done
-            echo $changed
           }
           # Run multiple passes to catch nested dependencies
-          for i in 1 2 3; do
+          for i in 1 2 3 4 5; do
             echo "Pass $i: checking dependencies..."
             copy_missing_deps
           done
@@ -132,12 +164,26 @@ jobs:
           find "$FRAMEWORKS_PATH" -name "*.dylib" -type f | while read -r dylib; do
             dylib_name=$(basename "$dylib")
             install_name_tool -id "@rpath/$dylib_name" "$dylib" 2>/dev/null || true
+            # Rewrite absolute paths to @rpath
             otool -L "$dylib" 2>/dev/null | grep -E "^\s+/" | awk '{print $1}' | while read -r dep; do
               dep_name=$(basename "$dep")
               if [ -f "$FRAMEWORKS_PATH/$dep_name" ]; then
                 install_name_tool -change "$dep" "@rpath/$dep_name" "$dylib" 2>/dev/null || true
               fi
             done
+            # Remove hardcoded rpaths from dylibs - CRITICAL for portability
+            otool -l "$dylib" 2>/dev/null | grep -A2 LC_RPATH | grep "path " | awk '{print $2}' | while read -r rpath; do
+              case "$rpath" in
+                @executable_path*|@loader_path*|@rpath*)
+                  ;;
+                *)
+                  echo "Removing absolute rpath from $dylib_name: $rpath"
+                  install_name_tool -delete_rpath "$rpath" "$dylib" 2>/dev/null || true
+                  ;;
+              esac
+            done
+            # Add @loader_path rpath so dylibs can find their sibling dylibs
+            install_name_tool -add_rpath "@loader_path" "$dylib" 2>/dev/null || true
           done
 
           otool -L "$EXECUTABLE_PATH" 2>/dev/null | grep -E "^\s+/" | awk '{print $1}' | while read -r dep; do
