@@ -24,7 +24,7 @@ jobs:
 
       - name: Install Build Dependencies
         run: |
-          brew install ninja cmake nasm boost fmt lz4 nlohmann-json zlib zstd openssl@3 sdl2 pkg-config ffmpeg
+          brew install ninja cmake nasm boost fmt lz4 nlohmann-json zlib zstd openssl@3 sdl2 pkg-config ffmpeg openal-soft libusb autoconf automake libtool
 
       - name: Get Version
         id: version
