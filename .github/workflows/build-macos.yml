@@ -23,7 +23,8 @@ jobs:
           fetch-depth: 0
 
       - name: Install Build Dependencies
-        run: brew install ninja cmake nasm
+        run: |
+          brew install ninja cmake nasm boost fmt lz4 nlohmann-json zlib zstd openssl@3 sdl2 pkg-config
 
       - name: Get Version
         id: version
