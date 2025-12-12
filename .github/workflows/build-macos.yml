@@ -24,7 +24,15 @@ jobs:
 
       - name: Install Build Dependencies
         run: |
-          brew install ninja boost catch2 cmake enet fmt ffmpeg glslang hidapi libvpx lld llvm mbedtls nasm nlohmann-json openal-soft sdl2 molten-vk vulkan-headers vulkan-loader webp lz4 zstd openssl@3 pkg-config libusb opus
+          brew install ninja boost catch2 cmake enet fmt ffmpeg glslang hidapi libvpx lld llvm mbedtls nasm nlohmann-json openal-soft sdl2 molten-vk vulkan-headers vulkan-loader webp lz4 zstd openssl@3 pkg-config libusb opus python@3.12
+
+      - name: Set up Python 3.12 venv
+        run: |
+          python3.12 -m venv venv
+          source venv/bin/activate
+          pip install jsonschema jinja2
+          echo "VIRTUAL_ENV=$PWD/venv" >> $GITHUB_ENV
+          echo "$PWD/venv/bin" >> $GITHUB_PATH
 
       - name: Get Version
         id: version
