@@ -88,6 +88,20 @@ jobs:
 
           install_name_tool -add_rpath "@executable_path/../Frameworks" "$EXECUTABLE_PATH" 2>/dev/null || true
 
+          # Remove all hardcoded homebrew/system rpaths from executable - CRITICAL for portability
+          echo "Removing hardcoded rpaths from executable..."
+          otool -l "$EXECUTABLE_PATH" | grep -A2 LC_RPATH | grep "path " | awk '{print $2}' | while read -r rpath; do
+            case "$rpath" in
+              @executable_path*|@loader_path*|@rpath*)
+                echo "Keeping relative rpath: $rpath"
+                ;;
+              *)
+                echo "Removing absolute rpath: $rpath"
+                install_name_tool -delete_rpath "$rpath" "$EXECUTABLE_PATH" 2>/dev/null || true
+                ;;
+            esac
+          done
+
           find "$FRAMEWORKS_PATH" -name "*.dylib" -type f | while read -r dylib; do
             dylib_name=$(basename "$dylib")
             install_name_tool -id "@rpath/$dylib_name" "$dylib" 2>/dev/null || true
