@@ -128,3 +128,6 @@
 [submodule "externals/oaknut"]
 	path = externals/oaknut
 	url = https://github.com/merryhime/oaknut.git
+[submodule "externals/nx_tzdb/tzdb_to_nx"]
+	path = externals/nx_tzdb/tzdb_to_nx
+	url = https://github.com/lat9nq/tzdb_to_nx.git
