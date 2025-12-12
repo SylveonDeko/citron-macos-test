@@ -84,6 +84,33 @@ jobs:
           "$MACDEPLOYQT_PATH" "$APP_BUNDLE_PATH" -libpath="$QT_LIB_PATH" -verbose=1 -always-overwrite
 
           FRAMEWORKS_PATH="$APP_BUNDLE_PATH/Contents/Frameworks"
+
+          # Copy missing transitive dependencies (like libsharpyuv from webp)
+          echo "Checking for missing transitive dependencies..."
+          copy_missing_deps() {
+            local changed=0
+            find "$FRAMEWORKS_PATH" -name "*.dylib" -type f | while read -r dylib; do
+              otool -L "$dylib" 2>/dev/null | grep -E "^\s+@rpath/" | awk '{print $1}' | sed 's|@rpath/||' | while read -r dep; do
+                if [ ! -f "$FRAMEWORKS_PATH/$dep" ]; then
+                  # Try to find in homebrew
+                  HOMEBREW_LIB=$(find /opt/homebrew/lib /usr/local/lib -name "$dep" 2>/dev/null | head -1)
+                  if [ -n "$HOMEBREW_LIB" ] && [ -f "$HOMEBREW_LIB" ]; then
+                    echo "Copying missing dependency: $dep"
+                    cp "$HOMEBREW_LIB" "$FRAMEWORKS_PATH/"
+                    chmod u+w "$FRAMEWORKS_PATH/$dep"
+                    install_name_tool -id "@rpath/$dep" "$FRAMEWORKS_PATH/$dep" 2>/dev/null || true
+                    changed=1
+                  fi
+                fi
+              done
+            done
+            echo $changed
+          }
+          # Run multiple passes to catch nested dependencies
+          for i in 1 2 3; do
+            echo "Pass $i: checking dependencies..."
+            copy_missing_deps
+          done
           EXECUTABLE_PATH="$APP_BUNDLE_PATH/Contents/MacOS/citron"
 
           install_name_tool -add_rpath "@executable_path/../Frameworks" "$EXECUTABLE_PATH" 2>/dev/null || true
