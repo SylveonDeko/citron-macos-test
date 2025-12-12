@@ -24,7 +24,7 @@ jobs:
 
       - name: Install Build Dependencies
         run: |
-          brew install ninja cmake nasm boost fmt lz4 nlohmann-json zlib zstd openssl@3 sdl2 pkg-config ffmpeg openal-soft libusb autoconf automake libtool glslang enet opus
+          brew install ninja boost catch2 cmake enet fmt ffmpeg glslang hidapi libvpx lld llvm mbedtls nasm nlohmann-json openal-soft sdl2 molten-vk vulkan-headers vulkan-loader webp lz4 zstd openssl@3 pkg-config libusb opus
 
       - name: Get Version
         id: version
@@ -34,17 +34,23 @@ jobs:
 
       - name: Configure CMake
         run: |
+          OPENAL_DIR="$(brew --prefix openal-soft)"
+          SDL2_DIR="$(brew --prefix sdl2)"
           cmake -B build -S . -G "Ninja" \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
-            -DCMAKE_PREFIX_PATH="/opt/homebrew/opt/openal-soft" \
+            -DCMAKE_PREFIX_PATH="$OPENAL_DIR;$SDL2_DIR" \
+            -DCITRON_USE_FASTER_LD=OFF \
+            -DCITRON_USE_BUNDLED_VCPKG=OFF \
             -DENABLE_QT=ON \
-            -DCITRON_ENABLE_LTO=OFF \
+            -DCITRON_ENABLE_LTO=ON \
             -DCITRON_TESTS=OFF \
             -DUSE_DISCORD_PRESENCE=ON \
             -DENABLE_WEB_SERVICE=ON \
-            -DENABLE_SDL2=ON
+            -DENABLE_OPENSSL=ON \
+            -DENABLE_SDL2=ON \
+            -DCITRON_USE_EXTERNAL_SDL2=OFF
 
       - name: Build Citron
         run: cmake --build build --config Release
